@@ -1,0 +1,579 @@
+#include "Navigator.hpp"
+#include <cmath> 
+#include <iostream>
+
+Navigator::Navigator(Grid grid, Point Start, Point Goal, double pos_tol, double ang_tol) :
+    g(grid), start(Start), goal(Goal), target_index(0), 
+    robot_state(Robot_State::MOVING), pos_tolerance(pos_tol), ang_tolerance(ang_tol) {}
+
+void Navigator::setPath(const vector<Node>& new_path) {
+    path = new_path;
+    target_index = 0;
+    robot_state = Robot_State::MOVING;
+    
+    if (!path.empty()) {
+        Node first_node = path[0];
+        if (first_node.state == Node::ROTATE) {
+            robot_state = Robot_State::ROTATING;
+        // } else if (first_node.state == Node::STOP) {
+        //     robot_state = Robot_State::STOPPING;
+        } else {
+            robot_state = Robot_State::MOVING;
+        }
+    }
+    
+    cout << "Path set with " << path.size() << " nodes. Starting state: " 
+         << robot_state << endl;
+}
+
+// void Navigator::update(Point position) {
+//     if (path.empty() || target_index >= path.size()) {
+//         robot_state = Robot_State::FINISHED;
+//         return;
+//     }
+
+//     Node target = path[target_index];
+//     Node::State node_state = target.state;
+
+//     double dx = target.position.x - position.x;
+//     double dy = target.position.y - position.y;
+//     double error_distance = sqrt(dx * dx + dy * dy);
+    
+//     double target_angle = atan2(dy, dx);
+//     double error_angle = target_angle - position.theta;
+//     error_angle = normalizeAngle(error_angle);
+
+//     switch(node_state) {
+//         case Node::ROTATE: {
+//             robot_state = Robot_State::ROTATING;
+//             if (fabs(error_angle) < ang_tolerance) {
+//                 target_index++;
+
+//                 if (target_index < path.size()) {
+//                     Node next = path[target_index];
+//                     if (next.state == Node::START) {
+//                         robot_state = Robot_State::MOVING;
+//                     } else if (next.state == Node::STOP) {
+//                         robot_state = Robot_State::MOVING;
+//                     }
+//                 } else {
+//                     robot_state = Robot_State::FINISHED;
+//                 }
+//             }
+//             break;
+//         }
+        
+//         case Node::STOP: {
+//             robot_state = Robot_State::MOVING;
+//             if (error_distance < pos_tolerance) {
+//                 target_index++;
+                
+//                 if (target_index < path.size()) {
+//                     Node next = path[target_index];
+//                     if (next.state == Node::ROTATE) {
+//                         robot_state = Robot_State::ROTATING;
+//                     } else if (next.state == Node::START || next.state == Node::CONTINUE) {
+//                         robot_state = Robot_State::MOVING;
+//                     }
+//                 } else {
+//                     robot_state = Robot_State::FINISHED;
+//                 }
+//             }
+//             break;
+//         }
+        
+//         case Node::START: {
+//             robot_state = Robot_State::MOVING;
+            
+//             if (error_distance < pos_tolerance) {
+//                 target_index++;
+                
+//                 if (target_index < path.size()) {
+//                     Node next = path[target_index];
+//                     if (next.state == Node::STOP) {
+//                         robot_state = Robot_State::MOVING;
+//                     }
+//                 } else {
+//                     robot_state = Robot_State::FINISHED;
+//                 }
+//             }
+//             break;
+//         }
+        
+//         case Node::CONTINUE: {
+//             robot_state = Robot_State::MOVING;
+            
+//             if (error_distance < pos_tolerance) {
+//                 target_index++;
+                
+//                 if (target_index < path.size()) {
+//                     Node next = path[target_index];
+//                     if (next.state == Node::ROTATE) {
+//                         robot_state = Robot_State::ROTATING;
+//                     } else if (next.state == Node::STOP) {
+//                         robot_state = Robot_State::MOVING;
+//                     }
+//                 } else {
+//                     robot_state = Robot_State::FINISHED;
+//                 }
+//             }
+//             break;
+//         }
+        
+//         default:
+//             robot_state = Robot_State::FINISHED;
+//             break;
+//     }
+    
+//     // Debug output
+//     // cout << "Target: (" << target.position.x << "," << target.position.y 
+//     //      << ") | State: " << node_state 
+//     //      << " | Robot State: " << robot_state 
+//     //      << " | Index: " << target_index << "/" << path.size() << endl;
+// }
+
+void Navigator::update(Point position) {
+    if (path.empty() || target_index >= path.size()) {
+        robot_state = Robot_State::FINISHED;
+        return;
+    }
+
+    Node target = path[target_index];
+    Node::State node_state = target.state;
+
+    double dx = target.position.x - position.x;
+    double dy = target.position.y - position.y;
+    double error_distance = sqrt(dx * dx + dy * dy);
+    
+    double target_angle;
+    if (node_state == Node::ROTATE) {
+        target_angle = target.pointer;
+    } else {
+        target_angle = atan2(dy, dx);
+    }
+    
+    double error_angle = target_angle - position.theta;
+    error_angle = normalizeAngle(error_angle);
+
+    // ===== دیباگ =====
+    // cout << "=== Navigator Update ===" << endl;
+    // cout << "Target: (" << target.position.x << "," << target.position.y << ")" << endl;
+    // cout << "Target Pointer: " << target.pointer * 180/M_PI << "°" << endl;
+    // cout << "Target Angle (calculated): " << target_angle * 180/M_PI << "°" << endl;
+    // cout << "Robot Theta: " << position.theta * 180/M_PI << "°" << endl;
+    // cout << "Error Angle: " << error_angle * 180/M_PI << "°" << endl;
+    // cout << "Error Distance: " << error_distance << endl;
+    // cout << "Node State: " << node_state << endl;
+    // cout << "=========================" << endl;
+
+    bool advance_target = false;  // فلگ برای افزایش ایندکس
+
+    switch(node_state) {
+        case Node::ROTATE: {
+            robot_state = Robot_State::ROTATING;
+            if (fabs(error_angle) < ang_tolerance) {
+                cout << "Rotation complete!" << endl;
+                advance_target = true;
+            }
+            break;
+        }
+        
+        case Node::STOP:
+        case Node::START:
+        case Node::CONTINUE: {
+            robot_state = Robot_State::MOVING;
+            if (error_distance < pos_tolerance) {
+                cout << "Position reached!" << endl;
+                advance_target = true;
+            }
+            break;
+        }
+        
+        default:
+            robot_state = Robot_State::FINISHED;
+            break;
+    }
+    
+    // اگر شرط برآورده شد، ایندکس را افزایش بده
+    if (advance_target) {
+        target_index++;
+        
+        // اگر هنوز گره باقی مانده، وضعیت را به‌روز کن
+        if (target_index < path.size()) {
+            Node next = path[target_index];
+            if (next.state == Node::ROTATE) {
+                robot_state = Robot_State::ROTATING;
+            } else {
+                robot_state = Robot_State::MOVING;
+            }
+        } else {
+            robot_state = Robot_State::FINISHED;
+        }
+    }
+}
+
+
+double Navigator::normalizeAngle(double angle) {
+    while (angle > M_PI) angle -= 2.0 * M_PI;
+    while (angle < -M_PI) angle += 2.0 * M_PI;
+    return angle;
+}
+
+bool Navigator::needToRotate(Point current, Point next, Point robot) {
+    double current_angle = atan2(current.y - robot.y, current.x - robot.x);
+    double next_angle = atan2(next.y - current.y, next.x - current.x);
+    double diff = next_angle - current_angle;
+    diff = normalizeAngle(diff);
+    return fabs(diff) > ang_tolerance;
+}
+
+Robot_State Navigator::getState() const {
+    return robot_state;
+}
+
+Node Navigator::getTarget() const {
+    if (target_index < path.size()) {
+        return path[target_index];
+    }
+    return path.back();
+}
+
+Node Navigator::getCurrentNode() const {
+    if (target_index < path.size()) {
+        return path[target_index];
+    }
+    return path.back();
+}
+
+bool Navigator::isFinished() const {
+    return (robot_state == Robot_State::FINISHED || 
+            target_index >= path.size());
+}
+
+int Navigator::getIndex() const {
+    return target_index;
+}
+
+
+
+
+
+
+
+
+/////////// last ver
+
+
+
+
+
+
+
+
+#pragma once
+#include "Grid.hpp"
+#include "RobotState.hpp"
+#include "Node.hpp"
+#include <vector>
+#include <cmath>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+class Navigator {
+private:
+    Grid g;
+    vector<Node> path;          // مسیر کامل با Nodeها
+    int target_index;           // شاخص گره فعلی
+    Robot_State robot_state;    // وضعیت ربات
+    double pos_tolerance;
+    double ang_tolerance;
+    Point goal;
+    Point start;
+    
+    // متغیرهای کمکی برای چرخش
+    bool is_rotating_to_target;
+    double target_rotation_angle;
+
+public:   
+    Navigator(Grid grid, Point Start, Point Goal, 
+              double pos_tol = 0.02, double ang_tol = 0.01);
+    
+    void setPath(const vector<Node>& new_path);
+    
+    void update(Point position);
+    
+    Robot_State getState() const;
+    Node getTarget() const;              
+    bool isFinished() const;
+    int getIndex() const;
+    Node getCurrentNode() const;
+    
+    double normalizeAngle(double angle);
+    bool needToRotate(Point current, Point next, Point robot);
+    
+private:
+    // توابع کمکی
+    bool checkPositionReached(Point position, Node target);
+    bool checkAngleReached(Point position, double target_angle);
+    void advanceToNextNode();
+    double calculateTargetAngle(Point position, Node target);
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/////// last ver
+
+#include "Navigator.hpp"
+#include <cmath> 
+#include <iostream>
+
+Navigator::Navigator(Grid grid, Point Start, Point Goal, 
+                     double pos_tol, double ang_tol) 
+    : g(grid), start(Start), goal(Goal), target_index(0), 
+      robot_state(Robot_State::MOVING), 
+      pos_tolerance(pos_tol), ang_tolerance(ang_tol),
+      is_rotating_to_target(false), target_rotation_angle(0.0) {}
+
+void Navigator::setPath(const vector<Node>& new_path) {
+    path = new_path;
+    target_index = 0;
+    robot_state = Robot_State::MOVING;
+    is_rotating_to_target = false;
+    
+    if (!path.empty()) {
+        Node first_node = path[0];
+        if (first_node.state == Node::ROTATE) {
+            robot_state = Robot_State::ROTATING;
+            target_rotation_angle = first_node.pointer;
+        } else {
+            robot_state = Robot_State::MOVING;
+        }
+    }
+    
+    cout << "Path set with " << path.size() << " nodes. Starting state: " 
+         << robot_state << endl;
+}
+
+void Navigator::update(Point position) {
+    // بررسی پایان مسیر
+    if (path.empty() || target_index >= path.size()) {
+        robot_state = Robot_State::FINISHED;
+        return;
+    }
+
+    Node target = path[target_index];
+    Node::State node_state = target.state;
+
+    double dx = target.position.x - position.x;
+    double dy = target.position.y - position.y;
+    double error_distance = sqrt(dx * dx + dy * dy);
+    
+    double target_angle;
+    if (node_state == Node::ROTATE) {
+        target_angle = target.pointer;
+    } else {
+        target_angle = atan2(dy, dx);
+    }
+    
+    double error_angle = target_angle - position.theta;
+    error_angle = normalizeAngle(error_angle);
+
+    // ===== debug =====
+    // cout << "=== Navigator Update ===" << endl;
+    // cout << "Target: (" << target.position.x << "," << target.position.y << ")" << endl;
+    // cout << "Target Pointer: " << target.pointer * 180/M_PI << "°" << endl;
+    // cout << "Target Angle: " << target_angle * 180/M_PI << "°" << endl;
+    // cout << "Robot Theta: " << position.theta * 180/M_PI << "°" << endl;
+    // cout << "Error Angle: " << error_angle * 180/M_PI << "°" << endl;
+    // cout << "Error Distance: " << error_distance << endl;
+    // cout << "Node State: " << node_state << endl;
+    // cout << "Robot State: " << robot_state << endl;
+    // cout << "=========================" << endl;
+
+    bool advance = false;
+
+    switch(node_state) {
+        case Node::ROTATE: {
+            // حالت چرخش در محل
+            robot_state = Robot_State::ROTATING;
+            target_rotation_angle = target.pointer;
+            
+            if (fabs(error_angle) < ang_tolerance) {
+                cout << "Rotation complete!" << endl;
+                advance = true;
+            }
+            break;
+        }
+        
+        case Node::START:
+        case Node::CONTINUE: {
+            // حرکت به سمت نقطه بعدی
+            robot_state = Robot_State::MOVING;
+            
+            // اگر خطای زاویه زیاد است، ابتدا بچرخ
+            if (fabs(error_angle) > 0.1) {  // حدود 5.7 درجه
+                robot_state = Robot_State::ROTATING;
+                target_rotation_angle = target_angle;
+                is_rotating_to_target = true;
+                break;
+            }
+            
+            // اگر به نقطه رسیدیم
+            if (error_distance < pos_tolerance) {
+                cout << "Position reached!" << endl;
+                advance = true;
+            }
+            break;
+        }
+        
+        case Node::STOP: {
+            // توقف در نقطه هدف
+            robot_state = Robot_State::MOVING;
+            
+            if (error_distance < pos_tolerance) {
+                cout << "Stop position reached!" << endl;
+                advance = true;
+            }
+            break;
+        }
+        
+        default:
+            robot_state = Robot_State::FINISHED;
+            break;
+    }
+    
+    // اگر شرط برآورده شد، به گره بعدی برو
+    if (advance) {
+        target_index++;
+        is_rotating_to_target = false;
+        
+        // اگر گره بعدی وجود دارد، وضعیت را به‌روز کن
+        if (target_index < path.size()) {
+            Node next = path[target_index];
+            if (next.state == Node::ROTATE) {
+                robot_state = Robot_State::ROTATING;
+                target_rotation_angle = next.pointer;
+            } else {
+                robot_state = Robot_State::MOVING;
+            }
+        } else {
+            robot_state = Robot_State::FINISHED;
+        }
+    }
+}
+
+bool Navigator::checkPositionReached(Point position, Node target) {
+    double dx = target.position.x - position.x;
+    double dy = target.position.y - position.y;
+    double error_distance = sqrt(dx * dx + dy * dy);
+    return error_distance < pos_tolerance;
+}
+
+bool Navigator::checkAngleReached(Point position, double target_angle) {
+    double error = target_angle - position.theta;
+    error = normalizeAngle(error);
+    return fabs(error) < ang_tolerance;
+}
+
+void Navigator::advanceToNextNode() {
+    target_index++;
+    is_rotating_to_target = false;
+    
+    if (target_index < path.size()) {
+        Node next = path[target_index];
+        if (next.state == Node::ROTATE) {
+            robot_state = Robot_State::ROTATING;
+            target_rotation_angle = next.pointer;
+        } else {
+            robot_state = Robot_State::MOVING;
+        }
+    } else {
+        robot_state = Robot_State::FINISHED;
+    }
+}
+
+double Navigator::calculateTargetAngle(Point position, Node target) {
+    if (target.state == Node::ROTATE) {
+        return target.pointer;
+    } else {
+        double dx = target.position.x - position.x;
+        double dy = target.position.y - position.y;
+        return atan2(dy, dx);
+    }
+}
+
+double Navigator::normalizeAngle(double angle) {
+    while (angle > M_PI) angle -= 2.0 * M_PI;
+    while (angle < -M_PI) angle += 2.0 * M_PI;
+    return angle;
+}
+
+bool Navigator::needToRotate(Point current, Point next, Point robot) {
+    double current_angle = atan2(current.y - robot.y, current.x - robot.x);
+    double next_angle = atan2(next.y - current.y, next.x - current.x);
+    double diff = next_angle - current_angle;
+    diff = normalizeAngle(diff);
+    return fabs(diff) > ang_tolerance;
+}
+
+// ===== Getter Methods =====
+Robot_State Navigator::getState() const {
+    return robot_state;
+}
+
+Node Navigator::getTarget() const {
+    if (target_index < path.size()) {
+        return path[target_index];
+    }
+    return path.back();
+}
+
+Node Navigator::getCurrentNode() const {
+    if (target_index < path.size()) {
+        return path[target_index];
+    }
+    return path.back();
+}
+
+bool Navigator::isFinished() const {
+    return (robot_state == Robot_State::FINISHED || 
+            target_index >= path.size());
+}
+
+int Navigator::getIndex() const {
+    return target_index;
+}

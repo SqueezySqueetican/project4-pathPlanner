@@ -1,0 +1,51 @@
+#include "Controller.hpp"
+
+Controller::Controller(double kp_lin, double ki_lin, double kd_lin,
+            double kp_ang, double ki_ang, double kd_ang,
+            double dt)
+    : linear_pid(kp_lin, ki_lin, kd_lin, dt),
+        angular_pid(kp_ang, ki_ang, kd_ang, dt) {}
+
+Twist Controller::computeCommand(Point robot, Point target, State state) {
+    Twist cmd;
+
+    // Calculate errors
+    double dx = target.x - robot.x;
+    double dy = target.y - robot.y;
+    double error_distance = sqrt(dx * dx + dy * dy);
+    
+    double target_angle = atan2(dy, dx);
+    double error_angle = target_angle - robot.theta;
+    error_angle = normalizeAngle(error_angle);
+
+    // Apply control based on state
+    if (state == MOVING) {
+        cmd.linear_x = linear_pid.calculate(error_distance);
+        cmd.angular_z = angular_pid.calculate(error_angle);
+    } 
+    else if (state == ROTATING) {
+        cmd.linear_x = 0.0;   // Stop linear motion while rotating
+        cmd.angular_z = angular_pid.calculate(error_angle);
+    } 
+    else {
+        cmd.linear_x = 0.0;
+        cmd.angular_z = 0.0;
+    }
+
+    // محدودیت‌های ایمنی
+    const double MAX_LINEAR = 0.5;   // m/s
+    const double MAX_ANGULAR = 1.0;  // rad/s
+    
+    if (cmd.linear_x > MAX_LINEAR) cmd.linear_x = MAX_LINEAR;
+    if (cmd.linear_x < -MAX_LINEAR) cmd.linear_x = -MAX_LINEAR;
+    if (cmd.angular_z > MAX_ANGULAR) cmd.angular_z = MAX_ANGULAR;
+    if (cmd.angular_z < -MAX_ANGULAR) cmd.angular_z = -MAX_ANGULAR;
+
+    return cmd;
+}
+
+double Controller::normalizeAngle(double angle) {
+    while (angle > M_PI) angle -= 2.0 * M_PI;
+    while (angle < -M_PI) angle += 2.0 * M_PI;
+    return angle;
+}

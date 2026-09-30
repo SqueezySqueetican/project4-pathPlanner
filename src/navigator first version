@@ -1,0 +1,81 @@
+#include "Navigator.hpp"
+
+#include <cmath> 
+#include <iostream>
+
+Navigator::Navigator(Grid grid, Point Start_point, Point Goal_point, double pos_tol, double ang_tol) :
+g(grid), start(Start_point), goal(Goal_point), target_index(0), state(MOVING), pos_tolerance(pos_tol), ang_tolerance(ang_tol) 
+{
+    // list<Point> path = findPath(start, goal);
+    // for (Point p : path) {
+    //     cout << p.x << "," << p.y << "\t";
+    // }
+    // cout << endl;
+}
+
+void Navigator::update(Point position) {
+
+    Node target = path[target_index];
+
+    double dx = target.x - position.x;
+    double dy = target.y - position.y;
+    double error_distance = sqrt(dx * dx + dy * dy);
+
+    // State transitions
+    if (state == MOVING) {
+        if (error_distance < pos_tolerance) {
+            target_index++;
+            if (target_index >= path.size()) {
+                state = FINISHED;
+            } else {
+                Point next = path[target_index];
+                if (needToRotate(target, next, position)) {
+                    state = ROTATING;
+                }
+            }
+        }
+    }
+    else if (state == ROTATING) {
+        Point next = path[target_index];
+        double dx_next = next.x - position.x;
+        double dy_next = next.y - position.y;
+        double next_angle = atan2(dy_next, dx_next);
+        double error = next_angle - position.theta;
+        error = normalizeAngle(error);
+
+        if (fabs(error) < ang_tolerance) {
+            state = MOVING;  // Rotation complete, resume movement
+        }
+    }
+}
+
+
+
+//check angle between robot position and target -> command rotation if its needed
+bool Navigator::needToRotate(Point current, Point next, Point robot) {
+    double current_angle = atan2(current.y - robot.y, current.x - robot.x);
+    double next_angle = atan2(next.y - current.y, next.x - current.x);
+    double diff = next_angle - current_angle;
+    diff = normalizeAngle(diff);
+    return fabs(diff) > ang_tolerance;
+}
+
+double Navigator::normalizeAngle(double angle) {
+    while (angle > M_PI) angle -= 2.0 * M_PI;
+    while (angle < -M_PI) angle += 2.0 * M_PI;
+    return angle;
+}
+
+// getters
+State Navigator::getState()  {
+    return state;
+}
+
+int Navigator::getIndex()  {
+    return target_index;
+}
+
+
+
+
+
